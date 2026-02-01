@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personal Remote Camera</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #121212; color: white; }
+        video { width: 90%; max-width: 500px; border-radius: 10px; margin-top: 20px; border: 2px solid #00f2fe; }
+        .btn { padding: 10px 20px; background: #00f2fe; border: none; border-radius: 5px; cursor: pointer; margin: 10px; }
+    </style>
+</head>
+<body>
+
+    <h2>Remote Camera Link System</h2>
+    
+    <div id="setup">
+        <p>Apna Link Generate Karein:</p>
+        <button class="btn" onclick="generateLink()">Link Banayein</button>
+        <p id="shareLink" style="word-break: break-all; color: yellow;"></p>
+    </div>
+
+    <div id="viewer" style="display:none;">
+        <p>Live View:</p>
+        <video id="remoteVideo" autoplay playsinline></video>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const remoteId = urlParams.get('id');
+        const peer = new Peer(); // PeerJS instance
+
+        // AGAR LINK OPEN KIYA GAYA HAI (Target Phone)
+        if (remoteId) {
+            document.getElementById('setup').innerHTML = "<h3>Connecting...</h3>";
+            
+            peer.on('open', (id) => {
+                navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+                .then((stream) => {
+                    peer.call(remoteId, stream); // Receiver ko video bhejo
+                    document.body.innerHTML = "<h1>Streaming Live...</h1><p>Permission Allowed. Check your other phone.</p>";
+                }).catch(err => alert("Camera Permission Zaruri Hai!"));
+            });
+        }
+
+        // AGAR AAP LINK BANANA CHAHTE HAIN (Main Phone)
+        function generateLink() {
+            peer.on('open', (id) => {
+                const link = window.location.href + "?id=" + id;
+                document.getElementById('shareLink').innerText = link;
+                document.getElementById('viewer').style.display = "block";
+                alert("Ye link apne doosre phone par bhej kar 'Allow' karein.");
+            });
+        }
+
+        // Jab call aaye (Main Phone par)
+        peer.on('call', (call) => {
+            call.answer(); // Call uthao
+            call.on('stream', (remoteStream) => {
+                document.getElementById('remoteVideo').srcObject = remoteStream;
+            });
+        });
+    </script>
+</body>
+</html>
